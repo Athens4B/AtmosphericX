@@ -86,7 +86,7 @@
     },
     "application:information": {
         "application:location": "County, ST",
-        "application:timezone": "America/Chicago",
+        "application:timezone": "America/Detroit",
         "application:12hour": false,
         "application:useragent": "AtmosphericX/v6.0.0"
     },
