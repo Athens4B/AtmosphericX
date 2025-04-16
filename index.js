@@ -126,8 +126,8 @@ return new Promise(async (resolve, reject) => {
     let hosting = cache.configurations['hosting:settings']
     if (hosting['https:enabled']) { 
         let ssl = { key: fs.readFileSync(hosting['ssl:path']['ssl:key']), cert: fs.readFileSync(hosting['ssl:path']['ssl:cert']) };
-        httpsServer = https.createServer(ssl, app)
-        httpsServer.listen(hosting['https:port'], () => {})
+          httpsServer.listen(hosting['https:port'], '0.0.0.0', () => {});
+          httpServer.listen(hosting['http:port'], '0.0.0.0', () => {});
     }
     const httpServer = http.createServer(app)
     httpServer.listen(cache.configurations['hosting:settings']['http:port'], () => {})
