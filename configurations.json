@@ -1,6 +1,6 @@
 {
     "hosting:settings": {
-        "https:enabled": false,
+        "https:enabled": true,
         "https:port": 443,
         "http:port": 3010,
         "cookie:maxage": 86400000,
