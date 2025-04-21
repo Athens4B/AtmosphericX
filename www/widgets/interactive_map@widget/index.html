@@ -1,46 +1,659 @@
 <!DOCTYPE html>
 <html>
-    <title>AtmosphericX</title>
-    <link rel="icon" href="/assets/media/dashboard/favicon.ico" type="image/x-icon">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.4/howler.min.js"></script>
-    <link rel="stylesheet" href="../widgets/interactive_map@widget/index.css">
-    <link rel="stylesheet" href="../../assets/styles/streaming.css">
-    <link href="https://unpkg.com/leaflet@1.6.0/dist/leaflet.css" rel="stylesheet"/>
-    <script src="../../assets/javascript/library.js"></script>
-    <script src="../../assets/javascript/widgets.js"></script>
-    <script src="https://unpkg.com/leaflet@1.6.0/dist/leaflet.js"></script>
-    <body> 
+    <head>
+        <title>AtmosphericX</title>
+        <link rel="icon" href="/assets/media/dashboard/favicon.ico" type="image/x-icon">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.4/howler.min.js"></script>
+        <link rel="stylesheet" href="../widgets/interactive_map@widget/index.css">
+        <link rel="stylesheet" href="../../assets/styles/streaming.css">
+        <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
+        <script src="../../assets/javascript/library.js"></script>
+        <script src="../../assets/javascript/widgets.js"></script>
+        <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/togeojson/0.16.0/togeojson.min.js"></script>
+    </head>
+    <body>
+        <!-- Add the interactive map container -->
         <div id="interactive-map"></div>
-    </body>
-    <script>
-        /*
-            Full on interactive map using leaflet, this isn't fully finished and is still being worked on. In the future, this wil show
-            level2 and level3 radar products. This is a very basic version...
 
+        <!-- Add the alert list container -->
+        <div id="alert-list">
+            <h3>Active Alerts</h3>
+            <ul id="alert-items"></ul>
+        </div>
 
-            Additionally, This will auto zoom on new alerts and show storm reports provided by a few APIs to show the user what events are 
-            occuring on a visual scale
+        <!-- Add the custom alert box -->
+        <div id="custom-alert-box" style="position: absolute; top: 10px; left: 410px; color: white; padding: 5px; border-radius: 5px; display: none; z-index: 1000; width: 400px; height: auto; font-family: Arial, sans-serif;">
+            <button id="alert-box-close" style="position: absolute; top: 10px; right: 10px; background: none; border: none; color: white; font-size: 16px; cursor: pointer;">&times;</button>
+            <div id="alert-box-event" style="font-size: 20px; font-weight: bold; text-transform: uppercase; margin-bottom: 15px; color: white; padding: 10px; border-radius: 5px;"></div>
+            <div id="alert-box-expires" style="font-size: 16px; margin-bottom: 10px; color: white; padding: 5px; border-radius: 5px;"></div>
+            <div id="alert-box-areas" style="font-size: 16px; margin-bottom: 10px; color: white; padding: 5px; border-radius: 5px;"></div>
+            <div id="alert-box-max-wind" style="font-size: 16px; margin-bottom: 10px; color: white; padding: 5px; border-radius: 5px;"></div>
+            <div id="alert-box-max-hail" style="font-size: 16px; margin-bottom: 10px; color: white; padding: 5px; border-radius: 5px;"></div>
+        </div>
 
-            Calls:
-            - library.createSession() - Creates a session and triggers a callback to get the configurations for the client from the server
-            - library.init() - Initializes the library and sets the session to ready
-            - library.checkSession() - Checks if the session is ready to be updated
-            - library.sync() - Gathers information from the API and compares to see if it's recent or new, if so, it will add to the queue cache
-            - widgets.map.create() - Creates the map
-            - widgets.map.populate() - Populates the map with the data from the API
-        */
+        <script>
+            /*
+                Fixed issues with radar, click events, and active alerts.
+            */
 
-        library.createSession().then(() => {
-            library.init()
-            widgets.functions.init()
-            widgets.map.create()
-            setInterval(async () => {
-                let session = await library.checkSession()
-                if (session) { 
-                    await library.sync()
-                    widgets.map.populate()  
+            // Mapbox Access Token
+            mapboxgl.accessToken = 'pk.eyJ1Ijoic3RldmViNzgiLCJhIjoiY205aTRyM3R6MGNjdzJycHl3ajIycWk1MCJ9.1TxPuoQa-jAN7eUi5RR_ag';
+
+            library.createSession().then(() => {
+                library.init();
+                widgets.functions.init();
+
+                // Initialize Mapbox map
+                widgets.map.create = function () {
+                    console.log('Initializing Mapbox map...');
+                    widgets.map.instance = new mapboxgl.Map({
+                        container: 'interactive-map', // Ensure this matches the ID in the HTML
+                        style: 'mapbox://styles/steveb78/cm9nasayi00gs01rw4ah5blzc', // Restore your custom gray/silver style
+                        center: [-98.5795, 39.8283],
+                        zoom: 4,
+                        attributionControl: false
+                    });
+
+                    // Wait for the map's style to load before adding sources or layers
+                    widgets.map.instance.on('load', () => {
+                        console.log('Map style loaded.');
+
+                        // Fetch and display weather alerts
+                        updateWeatherAlerts();
+
+                        // Refresh weather alerts every 2 minutes
+                        setInterval(updateWeatherAlerts, 120000);
+
+                        // Fetch NOAA radar data and add it to the map
+                        fetchNOAARadar();
+
+                        // Refresh NOAA radar data every 2 minutes
+                        setInterval(fetchNOAARadar, 120000);
+
+                        // Fetch and display Local Storm Reports (LSRs)
+                        fetchLocalStormReportsFromKMZ();
+
+                        // Refresh LSR data every 10 minutes (600,000 milliseconds)
+                        setInterval(fetchLocalStormReportsFromKMZ, 600000);
+                    });
+
+                    widgets.map.instance.on('error', (e) => {
+                        console.error('Map error:', e);
+                    });
+                };
+
+                // Function to fetch and update weather alerts
+                async function updateWeatherAlerts() {
+                    try {
+                        // Fetch weather GeoJSON data
+                        const response = await fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert');
+                        if (!response.ok) throw new Error('Network response was not ok');
+                        const data = await response.json();
+                        console.log('Weather alerts data:', data);
+
+                        // Filter features with polygons or multipolygons
+                        const polygonFeatures = data.features.filter(
+                            f => f.geometry && (f.geometry.type === "Polygon" || f.geometry.type === "MultiPolygon")
+                        );
+
+                        if (polygonFeatures.length === 0) {
+                            console.warn('No polygon features found in the weather alerts data.');
+                            return; // Do not proceed if there are no polygons
+                        }
+
+                        const polygonGeoJSON = {
+                            type: "FeatureCollection",
+                            features: polygonFeatures
+                        };
+
+                        // Remove existing sources and layers to prevent duplicates
+                        if (widgets.map.instance.getSource('weather-alerts')) {
+                            widgets.map.instance.removeLayer('weather-alerts-layer');
+                            widgets.map.instance.removeLayer('weather-alerts-outline');
+                            widgets.map.instance.removeSource('weather-alerts');
+                        }
+
+                        // Add weather alerts source
+                        widgets.map.instance.addSource('weather-alerts', {
+                            type: 'geojson',
+                            data: polygonGeoJSON
+                        });
+
+                        // Add weather alerts layers
+                        widgets.map.instance.addLayer({
+                            id: 'weather-alerts-layer',
+                            type: 'fill',
+                            source: 'weather-alerts',
+                            paint: {
+                                'fill-opacity': 0 // Set fill opacity to 0 to remove shading
+                            }
+                        });
+
+                        widgets.map.instance.addLayer({
+                            id: 'weather-alerts-outline',
+                            type: 'line',
+                            source: 'weather-alerts',
+                            paint: {
+                                'line-color': [
+                                    'match',
+                                    ['downcase', ['get', 'event']],
+                                    'flood warning', '#2e7031',      // Darker green
+                                    'flash flood warning', '#2e7031',
+                                    'tornado warning', '#b71c1c',    // Darker red
+                                    'tornado emergency', '#7f0000',  // Even darker red
+                                    'severe weather statement', '#e65100', // Darker Orange for SWS
+                                    'severe thunderstorm warning', '#b8860b', // Darker yellow/gold
+                                    'tornado watch', '#ff8f00',      // Darker gold for Tornado Watch
+                                    'severe thunderstorm watch', '#0d47a1', // Darker blue for Severe T-storm Watch
+                                    // Default outline color
+                                    '#1565c0'
+                                ],
+                                'line-width': 7
+                            }
+                        });
+
+                        // Add click event to show alert details in the custom alert box
+                        widgets.map.instance.on('click', 'weather-alerts-layer', (e) => {
+                            const features = e.features[0];
+                            const properties = features.properties;
+
+                            populateAlertBox(properties);
+                        });
+
+                        // Add click event to handle multiple overlapping alerts
+                        widgets.map.instance.on('click', 'weather-alerts-layer', (e) => {
+                            const features = e.features; // Get all features at the clicked location
+                        
+                            if (features.length > 1) {
+                                // If multiple alerts overlap, display a list for the user to choose from
+                                const alertSelectionBox = document.createElement('div');
+                                alertSelectionBox.style.position = 'absolute';
+                                alertSelectionBox.style.top = `${e.point.y}px`;
+                                alertSelectionBox.style.left = `${e.point.x}px`;
+                                alertSelectionBox.style.background = 'white';
+                                alertSelectionBox.style.border = '1px solid #ccc';
+                                alertSelectionBox.style.padding = '10px';
+                                alertSelectionBox.style.zIndex = '1001';
+                                alertSelectionBox.style.fontFamily = 'Arial, sans-serif';
+                                alertSelectionBox.style.boxShadow = '0 2px 10px rgba(0,0,0,0.2)';
+                        
+                                // Add a title to the selection box
+                                const title = document.createElement('h4');
+                                title.textContent = 'Select an Alert';
+                                title.style.margin = '0 0 10px 0';
+                                title.style.fontSize = '16px';
+                                title.style.fontWeight = 'bold';
+                                alertSelectionBox.appendChild(title);
+                        
+                                // Add each alert to the selection box
+                                features.forEach((feature, index) => {
+                                    const alertButton = document.createElement('button');
+                                    alertButton.textContent = feature.properties.headline || feature.properties.event || `Alert ${index + 1}`;
+                                    alertButton.style.display = 'block';
+                                    alertButton.style.margin = '5px 0';
+                                    alertButton.style.padding = '5px';
+                                    alertButton.style.width = '100%';
+                                    alertButton.style.textAlign = 'left';
+                                    alertButton.style.border = '1px solid #ccc';
+                                    alertButton.style.background = '#f9f9f9';
+                                    alertButton.style.cursor = 'pointer';
+                        
+                                    // Add click event to display the selected alert in the red alert box
+                                    alertButton.addEventListener('click', () => {
+                                        const properties = feature.properties;
+                        
+                                        // Populate the custom red alert box
+                                        document.getElementById('alert-box-title').textContent = properties.headline || properties.event || 'Weather Alert';
+                                        document.getElementById('alert-box-expires').textContent = `Expires: ${properties.expires || 'Unknown'}`;
+                                        document.getElementById('alert-box-areas').textContent = `Areas: ${properties.areaDesc || 'Unknown'}`;
+                                        document.getElementById('alert-box-source').textContent = `Source: ${properties.senderName || 'Unknown'}`;
+                                        document.getElementById('alert-box-type').textContent = `Type: ${properties.event || 'Unknown'}`;
+                        
+                                        // Display the red alert box
+                                        const alertBox = document.getElementById('custom-alert-box');
+                                        alertBox.style.display = 'block';
+                        
+                                        // Remove the selection box
+                                        document.body.removeChild(alertSelectionBox);
+                                    });
+                        
+                                    alertSelectionBox.appendChild(alertButton);
+                                });
+                        
+                                // Add the selection box to the document
+                                document.body.appendChild(alertSelectionBox);
+                        
+                                // Remove the selection box if the user clicks outside of it
+                                document.addEventListener('click', function removeSelectionBox(event) {
+                                    if (!alertSelectionBox.contains(event.target)) {
+                                        document.body.removeChild(alertSelectionBox);
+                                        document.removeEventListener('click', removeSelectionBox);
+                                    }
+                                });
+                            } else if (features.length === 1) {
+                                // If only one alert is present, display it directly in the red alert box
+                                const properties = features[0].properties;
+                        
+                                // Populate the custom red alert box
+                                document.getElementById('alert-box-title').textContent = properties.headline || properties.event || 'Weather Alert';
+                                document.getElementById('alert-box-expires').textContent = `Expires: ${properties.expires || 'Unknown'}`;
+                                document.getElementById('alert-box-areas').textContent = `Areas: ${properties.areaDesc || 'Unknown'}`;
+                                document.getElementById('alert-box-source').textContent = `Source: ${properties.senderName || 'Unknown'}`;
+                                document.getElementById('alert-box-type').textContent = `Type: ${properties.event || 'Unknown'}`;
+                        
+                                // Display the red alert box
+                                const alertBox = document.getElementById('custom-alert-box');
+                                alertBox.style.display = 'block';
+                            }
+                        });
+
+                        widgets.map.instance.on('click', 'weather-alerts-layer', (e) => {
+                            const feature = e.features[0]; // Get the first feature at the clicked location
+                            const properties = feature.properties;
+
+                            // Populate the custom alert box
+                            document.getElementById('alert-box-title').textContent = properties.headline || properties.event || 'Weather Alert';
+                            document.getElementById('alert-box-expires').textContent = `Expires: ${properties.expires || 'Unknown'}`;
+                            document.getElementById('alert-box-areas').textContent = `Areas: ${properties.areaDesc || 'Unknown'}`;
+                            document.getElementById('alert-box-source').textContent = `Source: ${properties.senderName || 'Unknown'}`;
+                            document.getElementById('alert-box-type').textContent = `Type: ${properties.event || 'Unknown'}`;
+
+                            // Display the red alert box
+                            const alertBox = document.getElementById('custom-alert-box');
+                            alertBox.style.display = 'block';
+
+                            // Zoom to the alert's geometry
+                            if (feature.geometry) {
+                                const coordinates = feature.geometry.coordinates;
+
+                                // Handle Polygon and MultiPolygon geometries
+                                let flattenedCoordinates = [];
+                                if (feature.geometry.type === "Polygon") {
+                                    flattenedCoordinates = coordinates.flat(1); // Flatten one level for Polygon
+                                } else if (feature.geometry.type === "MultiPolygon") {
+                                    flattenedCoordinates = coordinates.flat(2); // Flatten two levels for MultiPolygon
+                                }
+
+                                // Ensure the coordinates are valid [lng, lat] pairs
+                                const validCoordinates = flattenedCoordinates.filter(coord => Array.isArray(coord) && coord.length === 2);
+
+                                if (validCoordinates.length > 0) {
+                                    // Create a bounding box from the valid coordinates
+                                    const bounds = validCoordinates.reduce(
+                                        (b, coord) => b.extend(coord),
+                                        new mapboxgl.LngLatBounds(validCoordinates[0], validCoordinates[0])
+                                    );
+
+                                    // Fit the map to the bounding box
+                                    widgets.map.instance.fitBounds(bounds, { padding: 50 });
+                                } else {
+                                    console.error("No valid coordinates found for the selected alert.");
+                                }
+                            } else {
+                                console.error("No geometry found for the selected alert.");
+                            }
+                        });
+
+                        // Hide the red alert box when clicking outside the polygons
+                        widgets.map.instance.on('click', (e) => {
+                            const features = widgets.map.instance.queryRenderedFeatures(e.point, {
+                                layers: ['weather-alerts-layer']
+                            });
+
+                            if (!features.length) {
+                                const alertBox = document.getElementById('custom-alert-box');
+                                alertBox.style.display = 'none';
+                            }
+                        });
+
+                        // Change the cursor to a pointer when hovering over the alerts
+                        widgets.map.instance.on('mouseenter', 'weather-alerts-layer', () => {
+                            widgets.map.instance.getCanvas().style.cursor = 'pointer';
+                        });
+
+                        widgets.map.instance.on('mouseleave', 'weather-alerts-layer', () => {
+                            widgets.map.instance.getCanvas().style.cursor = '';
+                        });
+
+                        // Populate the alert list and add click events
+                        const alertList = document.getElementById('alert-items');
+                        alertList.innerHTML = ''; // Clear existing items
+                        polygonFeatures.forEach((feature, index) => {
+                            const alertTitle = feature.properties.headline || feature.properties.event || `Alert ${index + 1}`;
+                            console.log('Adding alert to list:', alertTitle);
+                            const listItem = document.createElement('li');
+                            listItem.textContent = alertTitle;
+                            listItem.style.cursor = 'pointer';
+                            listItem.style.padding = '5px 0';
+                            listItem.style.borderBottom = '1px solid #ddd';
+
+                            // Add click event to show the alert in the custom alert box
+                            listItem.addEventListener('click', () => {
+                                const properties = feature.properties;
+
+                                populateAlertBox(properties);
+
+                                // Zoom to the alert's geometry
+                                if (feature.geometry) {
+                                    const coordinates = feature.geometry.coordinates;
+
+                                    // Handle Polygon and MultiPolygon geometries
+                                    let flattenedCoordinates = [];
+                                    if (feature.geometry.type === "Polygon") {
+                                        flattenedCoordinates = coordinates.flat(1); // Flatten one level for Polygon
+                                    } else if (feature.geometry.type === "MultiPolygon") {
+                                        flattenedCoordinates = coordinates.flat(2); // Flatten two levels for MultiPolygon
+                                    }
+
+                                    // Ensure the coordinates are valid [lng, lat] pairs
+                                    const validCoordinates = flattenedCoordinates.filter(coord => Array.isArray(coord) && coord.length === 2);
+
+                                    if (validCoordinates.length > 0) {
+                                        // Create a bounding box from the valid coordinates
+                                        const bounds = validCoordinates.reduce(
+                                            (b, coord) => b.extend(coord),
+                                            new mapboxgl.LngLatBounds(validCoordinates[0], validCoordinates[0])
+                                        );
+
+                                        // Fit the map to the bounding box
+                                        widgets.map.instance.fitBounds(bounds, { padding: 50 });
+                                    } else {
+                                        console.error("No valid coordinates found for the selected alert.");
+                                    }
+                                } else {
+                                    console.error("No geometry found for the selected alert.");
+                                }
+                            });
+
+                            alertList.appendChild(listItem);
+                        });
+
+                        console.log('Weather alerts updated successfully.');
+                    } catch (error) {
+                        console.error('Failed to fetch weather data:', error);
+
+                        // If the fetch fails, do not remove the existing polygons
+                        console.warn('Keeping existing polygons to avoid disappearing layers.');
+                    }
+                };
+
+                // Function to fetch NOAA radar data and add it to the map
+                function fetchNOAARadar() {
+                    const noaaRadarUrl = 'https://opengeo.ncep.noaa.gov/geoserver/conus/conus_bref_qcd/ows?service=WMS&version=1.3.0&request=GetMap&layers=conus_bref_qcd&styles=&crs=EPSG:3857&bbox={bbox-epsg-3857}&width=256&height=256&format=image/png&transparent=true';
+
+                    // Ensure the map instance is initialized before proceeding
+                    if (!widgets.map.instance) {
+                        console.error('Map instance is not initialized.');
+                        return;
+                    }
+
+                    try {
+                        // Check if the radar source already exists
+                        if (widgets.map.instance.getSource('noaa-radar')) {
+                            console.log('Radar source already exists. Updating the radar layer...');
+                        } else {
+                            // Add NOAA WMS radar source
+                            widgets.map.instance.addSource('noaa-radar', {
+                                type: 'raster',
+                                tiles: [noaaRadarUrl],
+                                tileSize: 256
+                            });
+
+                            // Add NOAA WMS radar layer
+                            widgets.map.instance.addLayer({
+                                id: 'noaa-radar-layer',
+                                type: 'raster',
+                                source: 'noaa-radar',
+                                paint: {
+                                    'raster-opacity': 0.7 // Adjust opacity for better visibility
+                                }
+                            });
+
+                            console.log('Added NOAA radar layer.');
+                        }
+                    } catch (error) {
+                        console.error('Failed to add or update NOAA radar layer:', error);
+                    }
                 }
-            }, 200) 
-        })
-    </script>
+
+                // Fetch NOAA radar data on page load
+                fetchNOAARadar();
+
+                // Refresh NOAA radar data every 10 minutes (600,000 milliseconds)
+                setInterval(fetchNOAARadar, 600000);
+
+                widgets.map.create();
+            });
+
+            // Add event listener to the close button
+            document.getElementById('alert-box-close').addEventListener('click', () => {
+                const alertBox = document.getElementById('custom-alert-box');
+                alertBox.style.display = 'none';
+            });
+
+            // Function to populate the alert box
+            function populateAlertBox(properties) {
+                // Format the expiration time to the local time of the alert
+                const expires = new Date(properties.expires).toLocaleString('en-US', {
+                    timeZone: properties.timeZone || 'America/New_York', // Use the alert's time zone or default to Eastern Time
+                    hour12: true,
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                    timeZoneName: 'short' // Display the time zone abbreviation (e.g., EDT, CST)
+                });
+
+                // Set colors based on the event type
+                const eventType = properties.event?.toLowerCase() || 'unknown';
+                let boxColor, line1Color, line2Color, line3Color, line4Color, line5Color;
+
+                if (eventType.includes('tornado warning')) {
+                    boxColor = '#b71c1c'; // Dark red
+                    line1Color = '#000000'; // Darkest red
+                    line2Color = '#d32f2f'; // Slightly lighter red
+                    line3Color = '#c62828'; // Medium red
+                    line4Color = '#b71c1c'; // Darker red
+                    line5Color = '#ff0000'; // Bright red
+                } else if (eventType.includes('severe thunderstorm')) {
+                    boxColor = '#ffaa00'; // Light yellow
+                    line1Color = '#000000'; // Darkest red
+                    line2Color = '#fdd835'; // Slightly darker yellow
+                    line3Color = '#fbc02d'; // Yellow
+                    line4Color = '#f9a825'; // Darker yellow
+                    line5Color = '#f57f17'; // Darkest yellow
+                } else if (eventType.includes('flash flood') || eventType.includes('flood')) {
+                    boxColor = '#00b300'; // Light green
+                    line1Color = '#000000'; // Green
+                    line2Color = '#66bb6a'; // Slightly lighter green
+                    line3Color = '#43a047'; // Green
+                    line4Color = '#2e7d32'; // Darker green
+                    line5Color = '#1b5e20'; // Darkest green
+                } else {
+                    boxColor = '#0080ff'; // Light blue
+                    line1Color = '#000000'; // Blue
+                    line2Color = '#2196f3'; // Slightly lighter blue
+                    line3Color = '#1976d2'; // Blue
+                    line4Color = '#1565c0'; // Darker blue
+                    line5Color = '#0d47a1'; // Darkest blue
+                }
+
+                // Apply colors to the alert box and its elements
+                const alertBox = document.getElementById('custom-alert-box');
+                alertBox.style.background = boxColor;
+
+                document.getElementById('alert-box-event').style.background = line1Color;
+                document.getElementById('alert-box-expires').style.background = line2Color;
+                document.getElementById('alert-box-areas').style.background = line3Color;
+                document.getElementById('alert-box-max-wind').style.background = line4Color;
+                document.getElementById('alert-box-max-hail').style.background = line5Color;
+
+                // Populate the custom alert box
+                document.getElementById('alert-box-event').textContent = properties.event || 'Unknown Event';
+                document.getElementById('alert-box-expires').textContent = `Expires: ${expires}`;
+                document.getElementById('alert-box-areas').textContent = `Areas: ${properties.areaDesc || 'Unknown'}`;
+                document.getElementById('alert-box-max-wind').textContent = `Max Wind Gust: ${properties.parameters?.maxWindGust || 'Unknown'}`;
+                document.getElementById('alert-box-max-hail').textContent = `Max Hail Size: ${properties.parameters?.maxHailSize || 'Unknown'}`;
+
+                // Display the alert box
+                alertBox.style.display = 'block';
+            }
+
+            // Function to fetch and display Local Storm Reports (LSRs)
+            async function fetchLocalStormReports() {
+                try {
+                    // Fetch LSR data from the NWS API
+                    const response = await fetch('https://api.weather.gov/reports');
+                    if (!response.ok) throw new Error('Failed to fetch LSR data');
+                    const lsrData = await response.json();
+
+                    console.log('Local Storm Reports data:', lsrData);
+
+                    // Filter valid features with Point geometries
+                    const pointFeatures = lsrData.features.filter(
+                        f => f.geometry && f.geometry.type === "Point"
+                    );
+
+                    if (pointFeatures.length === 0) {
+                        console.warn('No valid LSR features found.');
+                        return;
+                    }
+
+                    const lsrGeoJSON = {
+                        type: "FeatureCollection",
+                        features: pointFeatures
+                    };
+
+                    // Add LSR source to the map
+                    if (widgets.map.instance.getSource('local-storm-reports')) {
+                        widgets.map.instance.getSource('local-storm-reports').setData(lsrGeoJSON);
+                    } else {
+                        widgets.map.instance.addSource('local-storm-reports', {
+                            type: 'geojson',
+                            data: lsrGeoJSON
+                        });
+
+                        // Add LSR layer to the map
+                        widgets.map.instance.addLayer({
+                            id: 'local-storm-reports-layer',
+                            type: 'circle',
+                            source: 'local-storm-reports',
+                            paint: {
+                                'circle-radius': 6,
+                                'circle-color': [
+                                    'match',
+                                    ['get', 'event'],
+                                    'Tornado', '#b71c1c', // Red for tornadoes
+                                    'Hail', '#4caf50',    // Green for hail
+                                    'Wind', '#2196f3',    // Blue for wind
+                                    /* Default color */ '#ff9800' // Orange for other events
+                                ],
+                                'circle-stroke-width': 1,
+                                'circle-stroke-color': '#000000' // Black border
+                            }
+                        });
+
+                        console.log('Added Local Storm Reports layer.');
+                    }
+                } catch (error) {
+                    console.error('Error fetching or displaying LSR data:', error);
+                }
+            }
+
+            // Function to fetch and display Local Storm Reports (LSRs) from KMZ
+            async function fetchLocalStormReportsFromKMZ() {
+                try {
+                    // Fetch the KMZ file
+                    const response = await fetch('https://www.spc.noaa.gov/climo/reports/today.kmz');
+                    if (!response.ok) throw new Error('Failed to fetch LSR KMZ file');
+                    const kmzBlob = await response.blob();
+
+                    // Use JSZip to extract the KMZ file
+                    const zip = new JSZip();
+                    const kmzData = await zip.loadAsync(kmzBlob);
+
+                    // Find the KML file inside the KMZ
+                    const kmlFileName = Object.keys(kmzData.files).find(name => name.endsWith('.kml'));
+                    if (!kmlFileName) throw new Error('No KML file found in the KMZ');
+
+                    const kmlContent = await kmzData.files[kmlFileName].async('string');
+
+                    // Convert KML to GeoJSON
+                    const geojson = toGeoJSON.kml(new DOMParser().parseFromString(kmlContent, 'text/xml'));
+
+                    console.log('Local Storm Reports GeoJSON:', geojson);
+
+                    // Add LSR source to the map
+                    if (widgets.map.instance.getSource('local-storm-reports')) {
+                        widgets.map.instance.getSource('local-storm-reports').setData(geojson);
+                    } else {
+                        widgets.map.instance.addSource('local-storm-reports', {
+                            type: 'geojson',
+                            data: geojson
+                        });
+
+                        // Add LSR layer to the map
+                        widgets.map.instance.addLayer({
+                            id: 'local-storm-reports-layer',
+                            type: 'circle',
+                            source: 'local-storm-reports',
+                            paint: {
+                                'circle-radius': 6,
+                                'circle-color': [
+                                    'match',
+                                    ['get', 'event'],
+                                    'Tornado', '#b71c1c', // Red for tornadoes
+                                    'Hail', '#4caf50',    // Green for hail
+                                    'Wind', '#2196f3',    // Blue for wind
+                                    /* Default color */ '#ff9800' // Orange for other events
+                                ],
+                                'circle-stroke-width': 1,
+                                'circle-stroke-color': '#000000' // Black border
+                            }
+                        });
+
+                        console.log('Added Local Storm Reports layer.');
+                    }
+                } catch (error) {
+                    console.error('Error fetching or displaying LSR data from KMZ:', error);
+                }
+            }
+
+            // Fetch LSR data on page load
+            fetchLocalStormReportsFromKMZ();
+
+            // Refresh LSR data every 10 minutes (600,000 milliseconds)
+            setInterval(fetchLocalStormReportsFromKMZ, 600000);
+
+            // Add click event for LSR points
+            widgets.map.instance.on('click', 'local-storm-reports-layer', (e) => {
+                const feature = e.features[0];
+                const properties = feature.properties;
+
+                // Create a popup with LSR details
+                new mapboxgl.Popup()
+                    .setLngLat(feature.geometry.coordinates)
+                    .setHTML(`
+                        <strong>Event:</strong> ${properties.event || 'Unknown'}<br>
+                        <strong>Location:</strong> ${properties.location || 'Unknown'}<br>
+                        <strong>Time:</strong> ${new Date(properties.time).toLocaleString() || 'Unknown'}<br>
+                        <strong>Details:</strong> ${properties.details || 'No details available'}
+                    `)
+                    .addTo(widgets.map.instance);
+            });
+
+            // Change the cursor to a pointer when hovering over LSR points
+            widgets.map.instance.on('mouseenter', 'local-storm-reports-layer', () => {
+                widgets.map.instance.getCanvas().style.cursor = 'pointer';
+            });
+
+            widgets.map.instance.on('mouseleave', 'local-storm-reports-layer', () => {
+                widgets.map.instance.getCanvas().style.cursor = '';
+            });
+        </script>
+    </body>
 </html>
+<!-- This is the correct index.html -->

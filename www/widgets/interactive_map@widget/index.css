@@ -3,21 +3,127 @@
     src: url('/assets/fonts/SofiaSansSemiCondensed-Bold.ttf');
 }  
 body, html {
-    display: flex;
+    display: block;
     justify-content: center;
     align-items: center;
-    background-color: rgba(0, 0, 0, 0);
+    background-color: #e0e0e0; /* Light gray/silver */
     margin: 0;
-    float: center;
     overflow: hidden;
 }
-#interactive-map { 
-    width: 1920px;
-    height: 1080px;
+/* Styling for the map container */
+#interactive-map {
+    width: 100%;
+    height: 100vh;
+    border-radius: 18px;
+    box-shadow: 0 4px 32px rgba(0, 0, 0, 0.18);
+    overflow: hidden;
+    font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;
+    border: 1px solid #e0e6ed;
 }
+
+/* Styling for the alert list container */
+#alert-list {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    width: 300px;
+    max-height: 90vh;
+    overflow-y: auto;
+    background: white;
+    border: 1px solid #ccc;
+    padding: 10px;
+    z-index: 1000;
+    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.12);
+    border-radius: 8px;
+}
+
+/* Styling for the alert items */
+#alert-items {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+#alert-items li {
+    padding: 10px;
+    border-bottom: 1px solid #ddd;
+    cursor: pointer;
+}
+
+#alert-items li:hover {
+    background-color: #f1f1f1;
+}
+
 :root {
     --map-tiles-filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7)
 }
 .map-tiles {
     filter:var(--map-tiles-filter, none);
+}
+.mapboxgl-popup-content {
+    border-radius: 12px;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.12);
+    font-size: 1rem;
+    font-family: inherit;
+}
+
+#custom-alert-box {
+    position: absolute;
+    top: 10px;
+    left: 410px;
+    color: white;
+    padding: 5px;
+    border-radius: 5px;
+    display: none;
+    z-index: 1000;
+    width: 400px;
+    height: auto;
+    font-family: Arial, sans-serif;
+    background: #b71c1c; /* Default background color */
+    box-shadow: 4px 4px 10px rgba(0, 0, 0, 0.3); /* Add a slight drop shadow to the right */
+}
+
+/* Default styles for the custom alert box */
+#custom-alert-box {
+    background: #b71c1c; /* Default dark red */
+}
+
+/* Default styles for the child elements */
+#alert-box-event {
+    background: black; /* Default black for the event */
+}
+
+#alert-box-expires {
+    background: #ff0000; /* Default bright red */
+}
+
+#alert-box-areas {
+    background: #b11515; /* Default darker red */
+}
+
+#alert-box-max-wind {
+    background: #ff0000; /* Default bright red */
+}
+
+#alert-box-max-hail {
+    background: #b11515; /* Default darker red */
+}
+
+#custom-alert-box h3 {
+    margin: 0;
+    font-size: 23px;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+#custom-alert-box p {
+    margin: 5px 0;
+    font-size: 20px;
+}
+
+/* Capitalize text, add a shadow, and make the font bold in the popup alert */
+#custom-alert-box div {
+    text-transform: uppercase; /* Capitalize words */
+    text-shadow: 1px 1px 2px rgb(0, 0, 0); /* Add a slight dark shadow */
+    font-weight: bold; /* Make the font bold */
 }
