@@ -33,28 +33,10 @@
             <div id="alert-box-max-hail" style="font-size: 25px; margin-bottom: 10px; color: white; padding: 5px; border-radius: 5px;"></div>
         </div>
 
-        <!-- Add radar toggle control -->
-        <div id="radar-toggle" style="position: absolute; top: 10px; right: 10px; z-index: 1000; background: rgba(255, 255, 255, 0.9); padding: 10px; border-radius: 4px; box-shadow: 0 0 10px rgba(0,0,0,0.2); font-family: Arial, sans-serif;">
-            <div style="margin-bottom: 5px; font-weight: bold;">Radar Source:</div>
-            <select id="radar-select" style="padding: 5px; width: 100%;">
-                <option value="noaa">NOAA Radar</option>
-                <option value="rainviewer">RainViewer</option>
-                <option value="none">None</option>
-            </select>
-        </div>
-
         <script>
             /*
                 Fixed issues with radar, click events, and active alerts.
             */
-
-            // Add these variables at the top of your script section, right after <script> tag
-            let flashingInterval = null;
-            let currentFlashingAlertId = null;
-            // Add this variable to track which alert was flashing
-            let lastSelectedFeatureId = null;
-            // Add this variable to store more details about the selected alert
-            let lastSelectedAlertDetails = null;
 
             // Mapbox Access Token
             mapboxgl.accessToken = 'pk.eyJ1Ijoic3RldmViNzgiLCJhIjoiY205aTRyM3R6MGNjdzJycHl3ajIycWk1MCJ9.1TxPuoQa-jAN7eUi5RR_ag';
@@ -95,11 +77,6 @@
 
                         // Refresh LSR data every 10 minutes (600,000 milliseconds)
                         setInterval(fetchLocalStormReportsFromKMZ, 600000);
-
-                        // Setup radar toggle AFTER everything is loaded
-                        setTimeout(() => {
-                            setupRadarSourceToggle();
-                        }, 1000);
                     });
 
                     widgets.map.instance.on('error', (e) => {
@@ -110,21 +87,15 @@
                 // Function to fetch and update weather alerts
                 async function updateWeatherAlerts() {
                     try {
-                        // Save the ID of the currently flashing alert before refresh
-                        if (currentFlashingAlertId) {
-                            lastSelectedFeatureId = currentFlashingAlertId;
-                        }
-                        
                         // Fetch weather GeoJSON data
                         const response = await fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert');
                         if (!response.ok) throw new Error('Network response was not ok');
                         const data = await response.json();
                         console.log('Weather alerts data:', data);
 
-                        // Filter features with valid polygons or multipolygons
-                        const polygonFeatures = data.features.filter(f => 
-                            hasValidCoordinates(f) && 
-                            (f.geometry.type === "Polygon" || f.geometry.type === "MultiPolygon")
+                        // Filter features with polygons or multipolygons
+                        const polygonFeatures = data.features.filter(
+                            f => f.geometry && (f.geometry.type === "Polygon" || f.geometry.type === "MultiPolygon")
                         );
 
                         if (polygonFeatures.length === 0) {
@@ -289,9 +260,6 @@
                             document.getElementById('alert-box-source').textContent = `Source: ${properties.senderName || 'Unknown'}`;
                             document.getElementById('alert-box-type').textContent = `Type: ${properties.event || 'Unknown'}`;
 
-                            // Start flashing the selected polygon
-                            startFlashingPolygon(feature);
-
                             // Display the red alert box
                             const alertBox = document.getElementById('custom-alert-box');
                             alertBox.style.display = 'block';
@@ -337,9 +305,6 @@
                             if (!features.length) {
                                 const alertBox = document.getElementById('custom-alert-box');
                                 alertBox.style.display = 'none';
-                                
-                                // Stop flashing when clicking outside polygons
-                                stopFlashingPolygon();
                             }
                         });
 
@@ -369,9 +334,6 @@
                                 const properties = feature.properties;
 
                                 populateAlertBox(properties);
-                                
-                                // Start flashing the selected polygon
-                                startFlashingPolygon(feature);
 
                                 // Zoom to the alert's geometry
                                 if (feature.geometry) {
@@ -408,36 +370,6 @@
                             alertList.appendChild(listItem);
                         });
 
-                        // Re-flash the previously selected alert if it exists in the new data
-                        if (lastSelectedFeatureId) {
-                            console.log('Attempting to restore flash animation', lastSelectedFeatureId);
-                            console.log('Last selected alert details:', lastSelectedAlertDetails);
-                            
-                            // Try to find the matching alert in the new data
-                            const previouslySelectedFeature = findMatchingAlert(polygonFeatures, lastSelectedFeatureId);
-                            
-                            if (previouslySelectedFeature) {
-                                console.log('Found matching alert to restore flashing');
-                                // Use a longer timeout to ensure everything is initialized
-                                setTimeout(() => {
-                                    // Completely recreate the flashing effect
-                                    startFlashingPolygon(previouslySelectedFeature);
-                                    
-                                    // Make sure the alert box is still displayed
-                                    const alertBox = document.getElementById('custom-alert-box');
-                                    if (alertBox.style.display !== 'block') {
-                                        alertBox.style.display = 'block';
-                                    }
-                                    
-                                    // Re-populate the alert box just to be sure
-                                    populateAlertBox(previouslySelectedFeature.properties);
-                                }, 1000); // Increased timeout for better reliability
-                            } else {
-                                console.log('Previously selected alert no longer exists in the data');
-                                // Don't clear the IDs here, as the alert might come back in a future update
-                            }
-                        }
-
                         console.log('Weather alerts updated successfully.');
                     } catch (error) {
                         console.error('Failed to fetch weather data:', error);
@@ -449,8 +381,7 @@
 
                 // Function to fetch NOAA radar data and add it to the map
                 function fetchNOAARadar() {
-                    // Request higher resolution tiles (512x512 instead of 256x256)
-                    const noaaRadarUrl = 'https://opengeo.ncep.noaa.gov/geoserver/conus/conus_bref_qcd/ows?service=WMS&version=1.3.0&request=GetMap&layers=conus_bref_qcd&styles=&crs=EPSG:3857&bbox={bbox-epsg-3857}&width=512&height=512&format=image/png&transparent=true';
+                    const noaaRadarUrl = 'https://opengeo.ncep.noaa.gov/geoserver/conus/conus_bref_qcd/ows?service=WMS&version=1.3.0&request=GetMap&layers=conus_bref_qcd&styles=&crs=EPSG:3857&bbox={bbox-epsg-3857}&width=256&height=256&format=image/png&transparent=true';
 
                     // Ensure the map instance is initialized before proceeding
                     if (!widgets.map.instance) {
@@ -462,39 +393,25 @@
                         // Check if the radar source already exists
                         if (widgets.map.instance.getSource('noaa-radar')) {
                             console.log('Radar source already exists. Updating the radar layer...');
-                            // Update the existing source with new higher-res tiles - SAFER VERSION
-                            widgets.map.instance.getSource('noaa-radar').tiles = [noaaRadarUrl];
-                            
-                            // Only update the source cache if it exists
-                            if (widgets.map.instance.style && 
-                                widgets.map.instance.style.sourceCaches && 
-                                widgets.map.instance.style.sourceCaches['noaa-radar']) {
-                                widgets.map.instance.style.sourceCaches['noaa-radar']._source.tiles = [noaaRadarUrl];
-                            }
-                            
-                            widgets.map.instance.triggerRepaint();
                         } else {
-                            // Add NOAA WMS radar source with higher resolution settings
+                            // Add NOAA WMS radar source
                             widgets.map.instance.addSource('noaa-radar', {
                                 type: 'raster',
                                 tiles: [noaaRadarUrl],
-                                tileSize: 512, // Larger tile size for better resolution
-                                attribution: 'Radar: NOAA/NWS'
+                                tileSize: 256
                             });
 
-                            // Add NOAA WMS radar layer with improved rendering
+                            // Add NOAA WMS radar layer
                             widgets.map.instance.addLayer({
                                 id: 'noaa-radar-layer',
                                 type: 'raster',
                                 source: 'noaa-radar',
                                 paint: {
-                                    'raster-opacity': 0.7,
-                                    'raster-resampling': 'linear', // Linear interpolation for smoother appearance
-                                    'raster-fade-duration': 300    // Smooth transition between tiles (in milliseconds)
+                                    'raster-opacity': 0.7 // Adjust opacity for better visibility
                                 }
                             });
 
-                            console.log('Added high-resolution NOAA radar layer.');
+                            console.log('Added NOAA radar layer.');
                         }
                     } catch (error) {
                         console.error('Failed to add or update NOAA radar layer:', error);
@@ -507,12 +424,6 @@
                 // Refresh NOAA radar data every 10 minutes (600,000 milliseconds)
                 setInterval(fetchNOAARadar, 600000);
 
-                // Fetch RainViewer radar data
-                fetchRainViewerRadar();
-
-                // Refresh RainViewer radar data every 5 minutes
-                setInterval(fetchRainViewerRadar, 300000);
-
                 widgets.map.create();
             });
 
@@ -520,9 +431,6 @@
             document.getElementById('alert-box-close').addEventListener('click', () => {
                 const alertBox = document.getElementById('custom-alert-box');
                 alertBox.style.display = 'none';
-                
-                // Stop the flashing animation when the alert box is closed
-                stopFlashingPolygon();
             });
 
             // Function to populate the alert box
@@ -676,12 +584,6 @@
                     // Convert KML to GeoJSON
                     const geojson = toGeoJSON.kml(new DOMParser().parseFromString(kmlContent, 'text/xml'));
 
-                    // Filter out features with invalid coordinates
-                    if (geojson && geojson.features) {
-                        geojson.features = geojson.features.filter(hasValidCoordinates);
-                        console.log(`Filtered to ${geojson.features.length} valid LSR features`);
-                    }
-
                     console.log('Local Storm Reports GeoJSON:', geojson);
 
                     // Add LSR source to the map
@@ -751,295 +653,6 @@
             widgets.map.instance.on('mouseleave', 'local-storm-reports-layer', () => {
                 widgets.map.instance.getCanvas().style.cursor = '';
             });
-
-            // Variables to track polygon flashing animation
-            //let flashingInterval = null;
-            //let currentFlashingAlertId = null;
-
-            // Function to stop the flashing animation
-            function stopFlashingPolygon() {
-                if (flashingInterval !== null) {
-                    clearInterval(flashingInterval);
-                    flashingInterval = null;
-                    console.log('Flashing animation stopped');
-                }
-                
-                // Don't hide the layer, just stop the animation
-                // We no longer want to remove the currentFlashingAlertId either
-            }
-
-            // Function to start flashing animation for a selected polygon
-            function startFlashingPolygon(feature) {
-                console.log('Starting flash animation for feature:', feature.properties?.event || 'Unknown Alert');
-                
-                // Stop any existing animation first, but don't clear IDs
-                if (flashingInterval !== null) {
-                    clearInterval(flashingInterval);
-                    flashingInterval = null;
-                }
-                
-                // Generate a unique ID for this feature
-                currentFlashingAlertId = feature.id || feature.properties?.id || `alert-${Date.now()}`;
-                // Also update the lastSelectedFeatureId
-                lastSelectedFeatureId = currentFlashingAlertId;
-                
-                // Store additional details about this alert for more robust matching
-                if (feature.properties) {
-                    lastSelectedAlertDetails = {
-                        event: feature.properties.event,
-                        headline: feature.properties.headline,
-                        areaDesc: feature.properties.areaDesc,
-                        // Add more distinctive properties if available
-                        effective: feature.properties.effective,
-                        expires: feature.properties.expires
-                    };
-                }
-                
-                // Create a GeoJSON source with just this selected feature
-                const selectedFeatureGeoJSON = {
-                    type: "FeatureCollection",
-                    features: [feature]
-                };
-                
-                // Create or update the selected alert layer
-                if (!widgets.map.instance.getSource('selected-alert')) {
-                    console.log('Creating new selected-alert source');
-                    widgets.map.instance.addSource('selected-alert', {
-                        type: 'geojson',
-                        data: selectedFeatureGeoJSON
-                    });
-                    
-                    widgets.map.instance.addLayer({
-                        id: 'selected-alert-outline',
-                        type: 'line',
-                        source: 'selected-alert',
-                        paint: {
-                            'line-color': '#ffffff', // White outline
-                            'line-width': 4,
-                            'line-opacity': 1,
-                            'line-dasharray': [2, 2] // Dashed line for better visibility
-                        }
-                    });
-                } else {
-                    console.log('Updating existing selected-alert source');
-                    widgets.map.instance.getSource('selected-alert').setData(selectedFeatureGeoJSON);
-                }
-                
-                // Set up the flashing animation with alternating opacity
-                let visible = true;
-                flashingInterval = setInterval(() => {
-                    visible = !visible;
-                    if (widgets.map.instance.getLayer('selected-alert-outline')) {
-                        widgets.map.instance.setPaintProperty(
-                            'selected-alert-outline',
-                            'line-opacity',
-                            visible ? 1 : 0
-                        );
-                    } else {
-                        console.warn('selected-alert-outline layer not found during animation');
-                        // If the layer is gone, stop the interval to avoid errors
-                        clearInterval(flashingInterval);
-                        flashingInterval = null;
-                    }
-                }, 500); // Flash every 500ms
-            }
-
-            // Add this function near your other utility functions
-            function findMatchingAlert(polygonFeatures, previousId) {
-                // First try to find by ID
-                let match = polygonFeatures.find(f => 
-                    f.id === previousId || 
-                    (f.properties && f.properties.id === previousId)
-                );
-                
-                if (match) {
-                    console.log('Found exact ID match for previously selected alert');
-                    return match;
-                }
-                
-                // If we stored the alert details, try to match by properties
-                if (lastSelectedAlertDetails) {
-                    match = polygonFeatures.find(f => 
-                        f.properties && 
-                        f.properties.event === lastSelectedAlertDetails.event &&
-                        f.properties.headline === lastSelectedAlertDetails.headline &&
-                        f.properties.areaDesc === lastSelectedAlertDetails.areaDesc
-                    );
-                    
-                    if (match) {
-                        console.log('Found property match for previously selected alert');
-                        return match;
-                    }
-                }
-                
-                console.log('No matching alert found');
-                return null;
-            }
-
-            // Function to fetch and display RainViewer radar data
-            async function fetchRainViewerRadar() {
-                try {
-                    console.log('Fetching RainViewer radar data...');
-                    const response = await fetch('https://api.rainviewer.com/public/weather-maps.json');
-                    if (!response.ok) throw new Error('Failed to fetch RainViewer radar data');
-                    const data = await response.json();
-
-                    // Log the structure of the response for debugging
-                    console.log('RainViewer API Response structure:', 
-                        Object.keys(data).join(', '), 
-                        data.radar ? 'has radar' : 'no radar',
-                        data.satellite ? 'has satellite' : 'no satellite');
-
-                    // Get the latest radar frame from the updated API structure
-                    if (data.radar && data.radar.past && data.radar.past.length > 0) {
-                        // Use the most recent past radar frame
-                        const latestFrame = data.radar.past[data.radar.past.length - 1];
-                        const radarUrl = `https://tilecache.rainviewer.com${latestFrame.path}/256/{z}/{x}/{y}/2/1_1.png`;
-                        
-                        console.log('Found valid radar path:', latestFrame.path);
-                        addRainViewerLayer(radarUrl);
-                        return;
-                    }
-                    
-                    // Fallback to the public endpoint format
-                    if (data.host && data.radar && data.radar.nowcast) {
-                        const frame = data.radar.nowcast[0];
-                        const host = data.host;
-                        const radarUrl = `${host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`;
-                        
-                        console.log('Using nowcast radar path:', frame.path);
-                        addRainViewerLayer(radarUrl);
-                        return;
-                    }
-
-                    // Try the standard RainViewer format as another fallback
-                    const currentTimestamp = Math.floor(Date.now() / 1000);
-                    const radarUrl = `https://tilecache.rainviewer.com/v2/radar/nowcast/${currentTimestamp}/256/{z}/{x}/{y}/2/1_1.png`;
-                    console.log('Using fallback timestamp-based URL');
-                    addRainViewerLayer(radarUrl);
-
-                } catch (error) {
-                    console.error('Error fetching or displaying RainViewer radar data:', error);
-                }
-            }
-
-            // Helper function to add or update the RainViewer layer
-            function addRainViewerLayer(radarUrl) {
-                if (widgets.map.instance.getSource('rainviewer-radar')) {
-                    widgets.map.instance.getSource('rainviewer-radar').tiles = [radarUrl];
-                    console.log('Updated existing RainViewer radar source');
-                    widgets.map.instance.triggerRepaint();
-                } else {
-                    widgets.map.instance.addSource('rainviewer-radar', {
-                        type: 'raster',
-                        tiles: [radarUrl],
-                        tileSize: 512
-                    });
-
-                    widgets.map.instance.addLayer({
-                        id: 'rainviewer-radar-layer',
-                        type: 'raster',
-                        source: 'rainviewer-radar',
-                        paint: {
-                            'raster-opacity': 0.7,
-                            'raster-resampling': 'linear',
-                            'raster-fade-duration': 300
-                        },
-                        layout: {
-                            'visibility': 'none' // Hidden by default until selected
-                        }
-                    });
-
-                    console.log('Added RainViewer radar layer (hidden by default)');
-                }
-
-                // Make sure RainViewer layer is above the map base but below alerts
-                if (widgets.map.instance.getLayer('weather-alerts-layer')) {
-                    widgets.map.instance.moveLayer('rainviewer-radar-layer', 'weather-alerts-layer');
-                }
-            }
-
-            // Replace your existing radar select event listener with this version
-            function setupRadarSourceToggle() {
-                const select = document.getElementById('radar-select');
-                if (!select) {
-                    console.error('Radar select element not found');
-                    return;
-                }
-
-                select.addEventListener('change', function(e) {
-                    if (!widgets.map.instance) {
-                        console.error('Map not initialized yet');
-                        return;
-                    }
-                    
-                    const selectedValue = e.target.value;
-                    console.log('Changing radar source to:', selectedValue);
-                    
-                    // Use a longer timeout to ensure layers are fully loaded
-                    setTimeout(() => {
-                        try {
-                            // First hide all radar layers
-                            const radarLayers = ['noaa-radar-layer', 'rainviewer-radar-layer'];
-                            radarLayers.forEach(layerId => {
-                                if (widgets.map.instance.getLayer(layerId)) {
-                                    widgets.map.instance.setLayoutProperty(layerId, 'visibility', 'none');
-                                    console.log(`${layerId} hidden`);
-                                }
-                            });
-                            
-                            // Then show only the selected layer
-                            if (selectedValue !== 'none') {
-                                const selectedLayerId = selectedValue === 'noaa' ? 'noaa-radar-layer' : 'rainviewer-radar-layer';
-                                if (widgets.map.instance.getLayer(selectedLayerId)) {
-                                    widgets.map.instance.setLayoutProperty(selectedLayerId, 'visibility', 'visible');
-                                    console.log(`${selectedLayerId} now visible`);
-                                } else {
-                                    console.warn(`${selectedLayerId} not found - may still be loading`);
-                                }
-                            }
-                        } catch (error) {
-                            console.error('Error changing radar source:', error);
-                        }
-                    }, 500); // Increased timeout
-                });
-                
-                // Set default radar source to NOAA on page load
-                select.value = 'noaa';
-                // Trigger the change event to apply the default selection
-                select.dispatchEvent(new Event('change'));
-            }
-
-            // Add this function to help validate coordinates
-            function hasValidCoordinates(feature) {
-                if (!feature.geometry || !feature.geometry.coordinates) return false;
-                
-                if (feature.geometry.type === 'Point') {
-                    return Array.isArray(feature.geometry.coordinates) && 
-                           feature.geometry.coordinates.length === 2 && 
-                           feature.geometry.coordinates.every(coord => typeof coord === 'number');
-                }
-                
-                if (feature.geometry.type === 'Polygon') {
-                    return feature.geometry.coordinates.every(ring => 
-                        Array.isArray(ring) && ring.every(coord => 
-                            Array.isArray(coord) && coord.length === 2 && coord.every(num => typeof num === 'number')
-                        )
-                    );
-                }
-                
-                if (feature.geometry.type === 'MultiPolygon') {
-                    return feature.geometry.coordinates.every(polygon => 
-                        Array.isArray(polygon) && polygon.every(ring => 
-                            Array.isArray(ring) && ring.every(coord => 
-                                Array.isArray(coord) && coord.length === 2 && coord.every(num => typeof num === 'number')
-                            )
-                        )
-                    );
-                }
-                
-                return false;
-            }
         </script>
     </body>
 </html>
