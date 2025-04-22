@@ -122,12 +122,13 @@ html, body, #page {
     transform: translateY(-50%); /* Adjusts the vertical position */
 }
 #random_alert_location{
-    font-size: 30px;
+    font-size: 32px;
     position: absolute;
     text-align: left;
     overflow: hidden;
+    text-transform: uppercase;
     margin-left: 470px;
-    margin-top: 1025px;
+    margin-top: 1023px;
     color: white;
     width: 1400px;
     overflow-wrap: break-word;
@@ -135,14 +136,15 @@ html, body, #page {
     text-shadow: 2px 2px 15px #000000;
 }
 #random_alert_title{
-    margin-top: 1023px;
-    font-size: 30px;
+    margin-top: 1019px;
+    font-size: 31px;
     position: absolute;
     text-align: center;
+    text-transform: uppercase;
     overflow: hidden;
     color: white;
-    width: 450px;
-    height: 90px;
+    width: 457px;
+    height: 102px;
     word-wrap: break-word;
     font-family: 'SofiaSansSemiCondensed-Bold'; 
     text-shadow: 2px 2px 5px #000000;
